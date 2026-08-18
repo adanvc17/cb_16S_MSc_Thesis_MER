@@ -1,0 +1,97 @@
+# Placing amplicons within a full-length reference tree
+
+# We install first mafft
+
+conda create -n mafft
+bioconda install -c mafft
+
+#Then we need
+- The reference alignment (could be done with MUSCLE)
+- The amplicons in FASTA
+
+#And perform an amplicon alignment by running this
+mafft \
+--addfragments imngs_seqs_hits_AR3_AR4_renamed.fasta \
+--keeplength \
+ncbi_map_refs_tree.afa \
+> ncbi_map_ref_tree_imngs.aln.fasta
+
+#for short amplicons
+mafft \
+> --add restoration_candidates_renamed.fasta \
+> --keeplength \
+> --thread 1 \
+> Dan_CB_tree_aligned.afa \
+> > restoration_candidates.aln.fasta
+
+#We check the ref tree alignment
+seqkit stat ncbi_map_refs_tree.afa
+#double-check that the min, avg and max lengths are the same (so everything's aligned!)
+
+#Also take note of the number of reference seqs. 67 in this case, sum 1. (134 for the CB tree)
+
+
+#We need the aligned amplicons in a separate file, so we remove the ref seqs (the 67 from the check goes here!)
+
+seqkit range -r 68:-1 \
+> ncbi_map_ref_tree_imngs.aln.fasta \
+> > imngs_queries_aligned.fasta
+
+
+# We now run EPA-ng for placing the sequences in the tree,
+# which will need
+- Reference tree (.treeefile)
+- The reference alignment (.afa)
+- The aligned amplicons as query file (imngs_aligned.afa)
+- the substitution model (from the .iqtree file) (TPM3u+R5 -> TPM3uf)
+
+#For the substitution model, run
+less ncbi_map_refs_tree.iqtree
+/Model substitution
+#To get the model used for building the tree. TIM3uf equals to TIM3e from IQ-TREEE (check yours with less -> /Model substitution)
+
+epa-ng 
+--ref-msa ncbi_map_refs_tree.afa 
+--tree ncbi_map_refs_tree.treefile
+--query imngs_queries_aligned.fasta
+--model TIM3uf
+--outdir IMNGS_epa/
+
+# We extract annotations
+gappa examine assign \
+--jplace-path epa_output/epa_result.jplace \
+--taxon-file imngs_new_ids.tsv
+--out-dir IMNGS_assignment
+
+# for formatting the taxonomy file correctly
+awk -F'\t' 'NR==1{print; next} {n=split($2,a,"tax="); print $1"\t"a[2]}' imngs_taxonomy.tsv > imngs_taxonomy_clean.tsv
+
+
+#and a rough version of the treee
+gappa examine graft \
+--jplace-path epa_output/epa_result.jplace \
+--out-dir grafted_tree
+
+#parse output
+python3 
+
+# Heat tree
+gappa examine heat-tree 
+--jplace-path IMNGS_epa/epa_result.jplace 
+--write-svg-tree 
+--write-newick-tree 
+--out-dir IMNGS_epa_heat_tree/
+
+#EDPL
+gappa examine edpl 
+--jplace-path IMNGS_epa/epa_result.jplace 
+--out-dir IMNGS_epa_edpl/
+
+## For large alignments
+
+## filtering with some "criteria"
+grep -v -e "Desulfogranum" -e "Desulfobulbus" -e "Desulfolithobacter" -e "Desulfurivibrio" -e "Desulfoprunum" -e "Desulfomarina" -e "Desulforhopalus" -e "Desulfopila" -e "Desulfotalea" -e "Desulfocapsa" -e "NR_025150.1" imngs_map_placements_passed.tsv > imngs_map_placed_cb.tsv
+
+grep -e "Desulfogranum" -e "Desulfobulbus" -e "Desulfolithobacter" -e "Desulfurivibrio" -e "Desulfoprunum" -e "Desulfomarina" -e "Desulforhopalus" -e "Desulfopila" -e "Desulfotalea" -e "Desulfocapsa" -e "NR_025150.1" imngs_map_placements_passed.tsv > imngs_map_placed_other_dsbbs.tsv
+
+grep -e "internal" imngs_map_placed_other_dsbbs.tsv > imngs_map_internal_placements.tsv
